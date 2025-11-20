@@ -1,8 +1,8 @@
 import numpy as np
-from connect4.connect_state import ConnectState
 from connect4.policy import Policy
+from typing import override
+from connect4.connect_state import ConnectState
 import math
-
 
 class MCTS:
     def __init__(self, state: ConnectState, parent=None, action=None):
@@ -64,14 +64,12 @@ class MCTS:
         self.children[action] = child_node
         
         return child_node
+    
 
     def _simulate(self, my_player):
-        # Rollout
-        sim_board = self.state.board.copy()
-        sim_player = self.state.player
-        current_state = ConnectState(board=sim_board, player=sim_player)
+        current_state = ConnectState(board=self.state.board.copy(), player=self.state.player)
         
-        max_moves = 15
+        max_moves = 15  
         moves = 0
         
         while moves < max_moves:
@@ -86,7 +84,7 @@ class MCTS:
             
             try:
                 current_state = current_state.transition(action)
-                moves = moves + 1
+                moves += 1
             except ValueError:
                 break
         
@@ -98,21 +96,45 @@ class MCTS:
             return 0.5
         else:
             return 0.0
+    
+    def _select_heuristic_action(self, state, available_actions):
+        # Prioridad 1: Ganar inmediatamente
+        for action in available_actions:
+            next_state = state.transition(action)
+            if next_state.get_winner() == state.player:
+                return action
         
-    def _select_fast_action(self, state, available_actions):
-        # Intentar jugar en la columna central
+        # Prioridad 2: Bloquear victoria del oponente
+        opponent = -state.player
+        for action in available_actions:
+            test_state = ConnectState(board=state.board.copy(), player=opponent)
+            next_state = test_state.transition(action)
+            if next_state.get_winner() == opponent:
+                return action
+        
+        # Prioridad 3: Columnas centrales (mejor estrategia en Connect-4)
         center_col = 3
         if center_col in available_actions:
             return center_col
         
-        # Si no se puede, elegir aleatoriamente pero priorizando las columnas de la mitad
+        # Sino, elegir la más cercana al centro
+        return min(available_actions, key=lambda x: abs(x - center_col))
+    
+    def _select_fast_action(self, state, available_actions):
+        """Versión rápida de selección para simulaciones"""
+        # Solo usar heurística básica de columna central
+        center_col = 3
+        if center_col in available_actions:
+            return center_col
+        
+        # Si no está disponible el centro, elegir aleatoriamente
+        # pero priorizando columnas centrales
         central_actions = [col for col in available_actions if 2 <= col <= 4]
         if central_actions:
             return central_actions[0]
         
         return available_actions[0]
-        
-        
+
 class Aha(Policy):
     
     def __init__(self):
@@ -134,6 +156,11 @@ class Aha(Policy):
             current_player = 1
         
         initial_state = ConnectState(board=s, player=current_player)
+        
+        quick_move = self._check_immediate_moves(initial_state)
+        if quick_move is not None:
+            return int(quick_move)
+        
         root = MCTS(initial_state)
         
         for _ in range(self.num_simulations):
@@ -157,15 +184,15 @@ class Aha(Policy):
             
             # Backpropagation
             while node is not None:
-                node.visits = node.visits + 1
+                node.visits += 1
                 
                 if node.parent is None:
-                    node.wins = node.wins + reward
+                    node.wins += reward
                 elif node.parent.state.player == current_player:
-                    node.wins = node.wins + reward
+                    node.wins += reward
                 else:
                     inverse_reward = 1 - reward
-                    node.wins = node.wins + inverse_reward
+                    node.wins += inverse_reward
                 
                 node = node.parent
         
@@ -181,3 +208,25 @@ class Aha(Policy):
             best_action = available[0]
         
         return int(best_action)
+    
+    def _check_immediate_moves(self, state):
+        """Verifica movimientos inmediatos (ganar o bloquear) para evitar MCTS innecesario"""
+        available = state.get_free_cols()
+        
+        # 1. Verificar si podemos ganar
+        for action in available:
+            next_state = state.transition(action)
+            if next_state.get_winner() == state.player:
+                return action
+        
+        # 2. Verificar si necesitamos bloquear
+        opponent = -state.player
+        for action in available:
+            test_state = ConnectState(board=state.board.copy(), player=opponent)
+            next_state = test_state.transition(action)
+            if next_state.get_winner() == opponent:
+                return action
+        
+        # No hay movimientos obvios, usar MCTS
+        return None
+

@@ -1,6 +1,5 @@
 import numpy as np
 from connect4.policy import Policy
-from typing import override
 from connect4.connect_state import ConnectState
 import math
 
@@ -147,8 +146,8 @@ class MCTS:
 
 class Aha(Policy):
     
-    def __init__(self, num_simulations=200, exploration_weight=1.414,
-                 rollout_depth=15, heuristics_enabled=True):
+    def __init__(self, num_simulations=180, exploration_weight=1.0,
+                 rollout_depth=20, heuristics_enabled=True):
         super().__init__()
         self.num_simulations = num_simulations
         self.exploration_weight = exploration_weight

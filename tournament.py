@@ -2,6 +2,7 @@ from typing import Callable
 from connect4.dtos import Game, Match, Participant, Versus
 from connect4.connect_state import ConnectState
 import numpy as np
+import os
 
 
 def next_power_of_two(n: int) -> int:
@@ -125,7 +126,9 @@ def play(
 
     # Save to file
     match_filename = f"match_{a_name}_vs_{b_name}.json"
-    with open("versus/" + match_filename, "w") as f:
+    # Ensure output directory exists
+    os.makedirs("versus", exist_ok=True)
+    with open(os.path.join("versus", match_filename), "w") as f:
         f.write(match.model_dump_json(indent=4))
 
     if a_wins > 0 or b_wins > 0:

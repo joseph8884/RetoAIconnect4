@@ -5,7 +5,7 @@ from connect4.connect_state import ConnectState
 import math
 
 class MCTS:
-    def __init__(self, state: ConnectState, parent=None, action=None):
+    def __init__(self, state: ConnectState, parent=None, action=None, rollout_depth=15, heuristics_enabled=True):
         self.state = state
         self.parent = parent
         self.action = action
@@ -13,6 +13,8 @@ class MCTS:
         self.visits = 0
         self.wins = 0
         self.available_actions = state.get_free_cols()
+        self.rollout_depth = rollout_depth
+        self.heuristics_enabled = heuristics_enabled
     
     def is_fully_expanded(self):
         total_children = len(self.children)
@@ -60,7 +62,10 @@ class MCTS:
         
         action = untried_actions[0]
         next_state = self.state.transition(action)
-        child_node = MCTS(next_state, parent=self, action=action)
+        # Propagar parámetros configurables 
+        child_node = MCTS(next_state, parent=self, action=action,
+                          rollout_depth=self.rollout_depth,
+                          heuristics_enabled=self.heuristics_enabled)
         self.children[action] = child_node
         
         return child_node
@@ -69,7 +74,8 @@ class MCTS:
     def _simulate(self, my_player):
         current_state = ConnectState(board=self.state.board.copy(), player=self.state.player)
         
-        max_moves = 15  
+        # Usar profundidad configurable 
+        max_moves = self.rollout_depth
         moves = 0
         
         while moves < max_moves:
@@ -80,7 +86,11 @@ class MCTS:
             if len(available) == 0:
                 break
             
-            action = self._select_fast_action(current_state, available)
+            # Toggle heurísticas vs selección rápida
+            if self.heuristics_enabled:
+                action = self._select_heuristic_action(current_state, available)
+            else:
+                action = self._select_fast_action(current_state, available)
             
             try:
                 current_state = current_state.transition(action)
@@ -137,10 +147,13 @@ class MCTS:
 
 class Aha(Policy):
     
-    def __init__(self):
+    def __init__(self, num_simulations=200, exploration_weight=1.414,
+                 rollout_depth=15, heuristics_enabled=True):
         super().__init__()
-        self.num_simulations = 200
-        self.exploration_weight = 1.414
+        self.num_simulations = num_simulations
+        self.exploration_weight = exploration_weight
+        self.rollout_depth = rollout_depth
+        self.heuristics_enabled = heuristics_enabled
 
     def mount(self):
         pass
@@ -161,7 +174,7 @@ class Aha(Policy):
         if quick_move is not None:
             return int(quick_move)
         
-        root = MCTS(initial_state)
+        root = MCTS(initial_state, rollout_depth=self.rollout_depth, heuristics_enabled=self.heuristics_enabled)
         
         for _ in range(self.num_simulations):
             node = root

@@ -1,6 +1,5 @@
 import numpy as np
 from connect4.policy import Policy
-from typing import override
 from connect4.connect_state import ConnectState
 import math
 

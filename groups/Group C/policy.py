@@ -7,238 +7,238 @@ from pathlib import Path
 from collections import defaultdict
 
 
-def cargar_qtable(ruta):
-    if not ruta.exists():
+def load_qtable(path):
+    if not path.exists():
         return defaultdict(float)
     try:
-        with open(ruta, 'rb') as f:
+        with open(path, 'rb') as f:
             data = pickle.load(f)
             return defaultdict(float, data.get('Q', {}))
     except:
         return defaultdict(float)
 
 
-def codificar_estado_accion(tablero, jugador, accion):
-    flat = tablero.flatten()
-    estado = f"{jugador}:" + ",".join(map(str, flat))
-    return f"{estado}|{accion}"
+def encode_state_action(board, player, action):
+    flat = board.flatten()
+    state = f"{player}:" + ",".join(map(str, flat))
+    return f"{state}|{action}"
 
 
 class MCTS:
-    def __init__(self, state, parent=None, action=None, profundidad=15, 
-                 usar_heuristicas=True, qtable=None, peso_q=0.3):
+    def __init__(self, state, parent=None, action=None, depth=15, 
+                 use_heuristics=True, qtable=None, q_weight=0.3):
         self.state = state
         self.parent = parent
         self.action = action
         self.children = {}
         self.visits = 0
         self.wins = 0
-        self.acciones_disponibles = state.get_free_cols()
-        self.profundidad = profundidad
-        self.usar_heuristicas = usar_heuristicas
+        self.available_actions = state.get_free_cols()
+        self.depth = depth
+        self.use_heuristics = use_heuristics
         self.qtable = qtable if qtable else defaultdict(float)
-        self.peso_q = peso_q
+        self.q_weight = q_weight
     
-    def esta_expandido(self):
-        return len(self.children) == len(self.acciones_disponibles)
+    def is_fully_expanded(self):
+        return len(self.children) == len(self.available_actions)
     
-    def es_terminal(self):
+    def is_terminal(self):
         return self.state.is_final()
     
-    def mejor_hijo(self, exploracion):
-        mejor_puntaje = -999999
-        mejor = None
+    def best_child(self, exploration):
+        best_score = -999999
+        best = None
         
-        for hijo in self.children.values():
-            if hijo.visits == 0:
-                return hijo
+        for child in self.children.values():
+            if child.visits == 0:
+                return child
             
-            tasa_victoria = hijo.wins / hijo.visits
-            termino_exploracion = math.sqrt(math.log(self.visits) / hijo.visits)
-            ucb = tasa_victoria + exploracion * termino_exploracion
+            win_rate = child.wins / child.visits
+            exploration_term = math.sqrt(math.log(self.visits) / child.visits)
+            ucb = win_rate + exploration * exploration_term
             
             q_val = 0.0
-            if len(self.qtable) > 0 and hijo.action is not None:
-                clave = codificar_estado_accion(self.state.board, self.state.player, hijo.action)
-                q_val = self.qtable.get(clave, 0.0)
+            if len(self.qtable) > 0 and child.action is not None:
+                key = encode_state_action(self.state.board, self.state.player, child.action)
+                q_val = self.qtable.get(key, 0.0)
                 q_val = (q_val + 1.0) / 2.0
             
-            puntaje = (1.0 - self.peso_q) * ucb + self.peso_q * q_val
+            score = (1.0 - self.q_weight) * ucb + self.q_weight * q_val
             
-            if puntaje > mejor_puntaje:
-                mejor_puntaje = puntaje
-                mejor = hijo
+            if score > best_score:
+                best_score = score
+                best = child
                 
-        return mejor
+        return best
     
-    def expandir(self):
-        no_probadas = [a for a in self.acciones_disponibles if a not in self.children]
+    def expand(self):
+        untried = [a for a in self.available_actions if a not in self.children]
         
-        if not no_probadas:
+        if not untried:
             return None
         
-        accion = no_probadas[0]
-        nuevo_estado = self.state.transition(accion)
-        hijo = MCTS(nuevo_estado, parent=self, action=accion,
-                    profundidad=self.profundidad, usar_heuristicas=self.usar_heuristicas,
-                    qtable=self.qtable, peso_q=self.peso_q)
-        self.children[accion] = hijo
-        return hijo
+        action = untried[0]
+        new_state = self.state.transition(action)
+        child = MCTS(new_state, parent=self, action=action,
+                    depth=self.depth, use_heuristics=self.use_heuristics,
+                    qtable=self.qtable, q_weight=self.q_weight)
+        self.children[action] = child
+        return child
     
 
-    def simular(self, mi_jugador):
-        estado = ConnectState(board=self.state.board.copy(), player=self.state.player)
-        movimientos = 0
+    def _simulate(self, my_player):
+        state = ConnectState(board=self.state.board.copy(), player=self.state.player)
+        moves = 0
         
-        while movimientos < self.profundidad:
-            if estado.is_final():
+        while moves < self.depth:
+            if state.is_final():
                 break
             
-            columnas = estado.get_free_cols()
-            if not columnas:
+            columns = state.get_free_cols()
+            if not columns:
                 break
             
-            if self.usar_heuristicas:
-                accion = self.elegir_con_heuristica(estado, columnas)
+            if self.use_heuristics:
+                action = self.choose_with_heuristic(state, columns)
             else:
-                accion = self.elegir_rapido(estado, columnas)
+                action = self.choose_fast(state, columns)
             
             try:
-                estado = estado.transition(accion)
-                movimientos += 1
+                state = state.transition(action)
+                moves += 1
             except:
                 break
         
-        ganador = estado.get_winner()
-        if ganador == mi_jugador:
+        winner = state.get_winner()
+        if winner == my_player:
             return 1.0
-        elif ganador == 0:
+        elif winner == 0:
             return 0.5
         return 0.0
     
-    def elegir_con_heuristica(self, estado, columnas):
-        for col in columnas:
-            sig = estado.transition(col)
-            if sig.get_winner() == estado.player:
+    def choose_with_heuristic(self, state, columns):
+        for col in columns:
+            next_state = state.transition(col)
+            if next_state.get_winner() == state.player:
                 return col
         
-        oponente = -estado.player
-        for col in columnas:
-            test = ConnectState(board=estado.board.copy(), player=oponente)
-            sig = test.transition(col)
-            if sig.get_winner() == oponente:
+        opponent = -state.player
+        for col in columns:
+            test = ConnectState(board=state.board.copy(), player=opponent)
+            next_state = test.transition(col)
+            if next_state.get_winner() == opponent:
                 return col
         
-        if 3 in columnas:
+        if 3 in columns:
             return 3
-        return min(columnas, key=lambda x: abs(x - 3))
+        return min(columns, key=lambda x: abs(x - 3))
     
-    def elegir_rapido(self, estado, columnas):
-        if 3 in columnas:
+    def choose_fast(self, state, columns):
+        if 3 in columns:
             return 3
-        centrales = [c for c in columnas if 2 <= c <= 4]
-        if centrales:
-            return centrales[0]
-        return columnas[0]
+        central = [c for c in columns if 2 <= c <= 4]
+        if central:
+            return central[0]
+        return columns[0]
 
 class LaMejorPoliticaConQvalues(Policy):
     
-    def __init__(self, simulaciones=180, exploracion=1.0, profundidad=20, 
-                 heuristicas=True, usar_qtable=True, peso_q=0.3):
+    def __init__(self, simulations=180, exploration=1.0, depth=20, 
+                 heuristics=True, use_qtable=True, q_weight=0.3):
         super().__init__()
-        self.simulaciones = simulaciones
-        self.exploracion = exploracion
-        self.profundidad = profundidad
-        self.heuristicas = heuristicas
-        self.usar_qtable = usar_qtable
-        self.peso_q = peso_q
+        self.simulations = simulations
+        self.exploration = exploration
+        self.depth = depth
+        self.heuristics = heuristics
+        self.use_qtable = use_qtable
+        self.q_weight = q_weight
         self.qtable = defaultdict(float)
 
     def mount(self):
-        if self.usar_qtable:
-            ruta = Path(__file__).parent.parent.parent / "train" / "q_table.pkl"
-            self.qtable = cargar_qtable(ruta)
+        if self.use_qtable:
+            path = Path(__file__).parent.parent.parent / "train" / "q_table.pkl"
+            self.qtable = load_qtable(path)
 
     def act(self, s):
-        rojas = np.sum(s == -1)
-        amarillas = np.sum(s == 1)
-        jugador = -1 if rojas == amarillas else 1
-        estado = ConnectState(board=s, player=jugador)
+        red_pieces = np.sum(s == -1)
+        yellow_pieces = np.sum(s == 1)
+        player = -1 if red_pieces == yellow_pieces else 1
+        state = ConnectState(board=s, player=player)
         
-        movimiento_rapido = self.verificar_inmediato(estado)
-        if movimiento_rapido is not None:
-            return int(movimiento_rapido)
+        quick_move = self.check_immediate(state)
+        if quick_move is not None:
+            return int(quick_move)
         
-        if self.usar_qtable and self.peso_q >= 0.99 and len(self.qtable) > 0:
-            return self.elegir_con_qtable(estado)
+        if self.use_qtable and self.q_weight >= 0.99 and len(self.qtable) > 0:
+            return self.choose_with_qtable(state)
         
-        raiz = MCTS(estado, profundidad=self.profundidad, usar_heuristicas=self.heuristicas,
-                    qtable=self.qtable, peso_q=self.peso_q)
+        root = MCTS(state, depth=self.depth, use_heuristics=self.heuristics,
+                    qtable=self.qtable, q_weight=self.q_weight)
         
-        for _ in range(self.simulaciones):
-            nodo = raiz
+        for _ in range(self.simulations):
+            node = root
             
             while True:
-                if nodo.es_terminal():
+                if node.is_terminal():
                     break
-                if not nodo.esta_expandido():
+                if not node.is_fully_expanded():
                     break
-                nodo = nodo.mejor_hijo(self.exploracion)
+                node = node.best_child(self.exploration)
             
-            if not nodo.es_terminal():
-                if not nodo.esta_expandido():
-                    nodo = nodo.expandir()
+            if not node.is_terminal():
+                if not node.is_fully_expanded():
+                    node = node.expand()
             
-            recompensa = nodo.simular(jugador)
+            reward = node._simulate(player)
             
-            while nodo is not None:
-                nodo.visits += 1
-                if nodo.parent is None:
-                    nodo.wins += recompensa
-                elif nodo.parent.state.player == jugador:
-                    nodo.wins += recompensa
+            while node is not None:
+                node.visits += 1
+                if node.parent is None:
+                    node.wins += reward
+                elif node.parent.state.player == player:
+                    node.wins += reward
                 else:
-                    nodo.wins += 1 - recompensa
-                nodo = nodo.parent
+                    node.wins += 1 - reward
+                node = node.parent
         
-        mejor_accion = None
-        max_visitas = -1
-        for accion, hijo in raiz.children.items():
-            if hijo.visits > max_visitas:
-                max_visitas = hijo.visits
-                mejor_accion = accion
+        best_action = None
+        max_visits = -1
+        for action, child in root.children.items():
+            if child.visits > max_visits:
+                max_visits = child.visits
+                best_action = action
         
-        if mejor_accion is None:
-            mejor_accion = estado.get_free_cols()[0]
+        if best_action is None:
+            best_action = state.get_free_cols()[0]
         
-        return int(mejor_accion)
+        return int(best_action)
     
-    def elegir_con_qtable(self, estado):
-        columnas = estado.get_free_cols()
-        mejor = columnas[0]
-        mejor_q = -float('inf')
+    def choose_with_qtable(self, state):
+        columns = state.get_free_cols()
+        best = columns[0]
+        best_q = -float('inf')
         
-        for col in columnas:
-            clave = codificar_estado_accion(estado.board, estado.player, col)
-            q = self.qtable.get(clave, 0.0)
-            if q > mejor_q:
-                mejor_q = q
-                mejor = col
-        return int(mejor)
+        for col in columns:
+            key = encode_state_action(state.board, state.player, col)
+            q = self.qtable.get(key, 0.0)
+            if q > best_q:
+                best_q = q
+                best = col
+        return int(best)
     
-    def verificar_inmediato(self, estado):
-        columnas = estado.get_free_cols()
+    def check_immediate(self, state):
+        columns = state.get_free_cols()
         
-        for col in columnas:
-            sig = estado.transition(col)
-            if sig.get_winner() == estado.player:
+        for col in columns:
+            next_state = state.transition(col)
+            if next_state.get_winner() == state.player:
                 return col
         
-        oponente = -estado.player
-        for col in columnas:
-            test = ConnectState(board=estado.board.copy(), player=oponente)
-            sig = test.transition(col)
-            if sig.get_winner() == oponente:
+        opponent = -state.player
+        for col in columns:
+            test = ConnectState(board=state.board.copy(), player=opponent)
+            next_state = test.transition(col)
+            if next_state.get_winner() == opponent:
                 return col
         
         return None

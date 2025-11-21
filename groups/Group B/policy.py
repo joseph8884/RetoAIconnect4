@@ -99,7 +99,7 @@ class MCTS:
             return 0.0
 
     
-class Hello(Policy):
+class VersionInicialPrimera(Policy):
 
     def __init__(self):
         super().__init__()

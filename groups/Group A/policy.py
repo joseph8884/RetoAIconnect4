@@ -144,7 +144,7 @@ class MCTS:
         
         return available_actions[0]
 
-class Aha(Policy):
+class MejoradaPeroNoLaMejor(Policy):
     
     def __init__(self, num_simulations=180, exploration_weight=1.0,
                  rollout_depth=20, heuristics_enabled=True):

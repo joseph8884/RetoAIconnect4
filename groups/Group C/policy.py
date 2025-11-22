@@ -57,13 +57,17 @@ class MCTS:
             exploration_term = math.sqrt(math.log(self.visits) / child.visits)
             ucb = win_rate + exploration * exploration_term
             
-            q_val = 0.0
+            # Usar Q-values como prior/sesgo adicional, no como reemplazo
+            q_bonus = 0.0
             if len(self.qtable) > 0 and child.action is not None:
                 key = encode_state_action(self.state.board, self.state.player, child.action)
                 q_val = self.qtable.get(key, 0.0)
-                q_val = (q_val + 1.0) / 2.0
+                # Normalizar Q-value a [0, 1] y aplicar como bonus pequeño
+                q_normalized = (q_val + 1.0) / 2.0
+                q_bonus = self.q_weight * q_normalized
             
-            score = (1.0 - self.q_weight) * ucb + self.q_weight * q_val
+            # UCB score con sesgo de Q-value
+            score = ucb + q_bonus
             
             if score > best_score:
                 best_score = score
@@ -77,7 +81,13 @@ class MCTS:
         if not untried:
             return None
         
-        action = untried[0]
+        # Priorizar expansión de acciones con mejor Q-value si está disponible
+        if len(self.qtable) > 0:
+            action = max(untried, key=lambda a: self.qtable.get(
+                encode_state_action(self.state.board, self.state.player, a), 0.0))
+        else:
+            action = untried[0]
+        
         new_state = self.state.transition(action)
         child = MCTS(new_state, parent=self, action=action,
                     depth=self.depth, use_heuristics=self.use_heuristics,
@@ -156,7 +166,7 @@ class LaMejorPoliticaConQvalues(Policy):
 
     def mount(self):
         if self.use_qtable:
-            path = Path(__file__).parent.parent.parent / "train" / "q_table.pkl"
+            path = Path(__file__).parent / "train" / "q_table.pkl"
             self.qtable = load_qtable(path)
 
     def act(self, s):

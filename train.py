@@ -249,7 +249,7 @@ if __name__ == "__main__":
     carpeta_train.mkdir(exist_ok=True)
     
     entrenador = Entrenador(
-        episodios=1000,
+        episodios=10000,
         epsilon_inicio=1.0,
         epsilon_fin=0.1,
         epsilon_decay=0.995,
